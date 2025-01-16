@@ -4,6 +4,7 @@ type InventoryProps = {
   address: string;
   istPurse: Purse;
   itemsPurse: Purse;
+  
 };
 
 const Inventory = ({ address, istPurse, itemsPurse }: InventoryProps) => (

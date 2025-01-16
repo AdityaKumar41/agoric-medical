@@ -15,6 +15,8 @@ import { makeCopyBag } from '@agoric/store';
 import { Logos } from './components/Logos';
 import { Inventory } from './components/Inventory';
 import { Trade } from './components/Trade';
+import { Consultation } from './components/Consultation';
+import { Purchase } from './components/Purchase';
 
 const { entries, fromEntries } = Object;
 
@@ -26,14 +28,8 @@ const ENDPOINTS = {
 };
 
 const codeSpaceHostName = import.meta.env.VITE_HOSTNAME;
+const codeSpaceDomain = import.meta.env.VITE_GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN;
 
-const codeSpaceDomain = import.meta.env
-  .VITE_GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN;
-
-if (codeSpaceHostName) {
-  ENDPOINTS.API = `https://${codeSpaceHostName}-1317.${codeSpaceDomain}`;
-  ENDPOINTS.RPC = `https://${codeSpaceHostName}-26657.${codeSpaceDomain}`;
-}
 if (codeSpaceHostName && codeSpaceDomain) {
   ENDPOINTS.API = `https://${codeSpaceHostName}-1317.${codeSpaceDomain}`;
   ENDPOINTS.RPC = `https://${codeSpaceHostName}-26657.${codeSpaceDomain}`;
@@ -42,6 +38,7 @@ if (codeSpaceHostName && codeSpaceDomain) {
     'Missing environment variables: VITE_HOSTNAME or VITE_GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN',
   );
 }
+
 const watcher = makeAgoricChainStorageWatcher(ENDPOINTS.API, 'agoriclocal');
 
 interface AppState {
@@ -49,6 +46,9 @@ interface AppState {
   offerUpInstance?: unknown;
   brands?: Record<string, unknown>;
   purses?: Array<Purse>;
+  doctors?: Array<{ id: string; depositFacet: unknown }>;
+  suppliers?: Array<{ id: string; depositFacet: unknown }>;
+  patients?: Array<{ id: string; depositFacet: unknown; balance: bigint }>;
 }
 
 const useAppStore = create<AppState>(() => ({}));
@@ -128,6 +128,85 @@ const makeOffer = (giveValue: bigint, wantChoices: Record<string, bigint>) => {
   );
 };
 
+const makeConsultationOffer = (
+  doctorId: string,
+  patientId: string,
+  fee: bigint,
+) => {
+  const { wallet, offerUpInstance, brands } = useAppStore.getState();
+  if (!offerUpInstance) {
+    alert('No contract instance found on the chain RPC: ' + ENDPOINTS.RPC);
+    throw Error('no contract instance');
+  }
+  if (!brands || !brands.Token) {
+    alert('Brands not available');
+    throw Error('brands not available');
+  }
+
+  const give = { Fee: { brand: brands.Token, value: fee } };
+
+  wallet?.makeOffer(
+    {
+      source: 'contract',
+      instance: offerUpInstance,
+      publicInvitationMaker: 'createConsultationInvitation',
+    },
+    { give, custom: { doctorId, patientId } },
+    undefined,
+    (update: { status: string; data?: unknown }) => {
+      if (update.status === 'error') {
+        alert(`Offer error: ${update.data}`);
+      }
+      if (update.status === 'accepted') {
+        alert('Consultation offer accepted');
+      }
+      if (update.status === 'refunded') {
+        alert('Consultation offer rejected');
+      }
+    },
+  );
+};
+
+const makePurchaseOffer = (
+  supplierId: string,
+  patientId: string,
+  medicineId: string,
+  price: bigint,
+) => {
+  const { wallet, offerUpInstance, brands } = useAppStore.getState();
+  if (!offerUpInstance) {
+    alert('No contract instance found on the chain RPC: ' + ENDPOINTS.RPC);
+    throw Error('no contract instance');
+  }
+  if (!brands || !brands.Token) {
+    alert('Brands not available');
+    throw Error('brands not available');
+  }
+
+  const give = { Price: { brand: brands.Token, value: price } };
+
+  wallet?.makeOffer(
+    {
+      source: 'contract',
+      instance: offerUpInstance,
+      publicInvitationMaker: 'createPurchaseInvitation',
+    },
+    { give, custom: { supplierId, patientId, medicineId } },
+    undefined,
+    (update: { status: string; data?: unknown }) => {
+      if (update.status === 'error') {
+        alert(`Offer error: ${update.data}`);
+      }
+      if (update.status === 'accepted') {
+        alert('Purchase offer accepted');
+      }
+      if (update.status === 'refunded') {
+        alert('Purchase offer rejected');
+      }
+    },
+  );
+};
+
 function App() {
   useEffect(() => {
     setup();
@@ -139,6 +218,7 @@ function App() {
   }));
   const istPurse = purses?.find(p => p.brandPetname === 'IST');
   const itemsPurse = purses?.find(p => p.brandPetname === 'Item');
+  const tokenPurse = purses?.find(p => p.brandPetname === 'Token');
 
   const tryConnectWallet = () => {
     connectWallet().catch(err => {
@@ -155,7 +235,7 @@ function App() {
   return (
     <>
       <Logos />
-      <h1>Items Listed on Offer Up</h1>
+      <h1>Medical Platform</h1>
 
       <div className="card">
         <Trade
@@ -163,13 +243,19 @@ function App() {
           istPurse={istPurse as Purse}
           walletConnected={!!wallet}
         />
+        <Consultation
+          makeConsultationOffer={makeConsultationOffer}
+          tokenPurse={tokenPurse as Purse}
+          walletConnected={!!wallet}
+        />
+        <Purchase
+          makePurchaseOffer={makePurchaseOffer}
+          tokenPurse={tokenPurse as Purse}
+          walletConnected={!!wallet}
+        />
         <hr />
-        {wallet && istPurse ? (
-          <Inventory
-            address={wallet.address}
-            istPurse={istPurse}
-            itemsPurse={itemsPurse as Purse}
-          />
+        {wallet && tokenPurse ? (
+          <Inventory address={wallet.address} tokenPurse={tokenPurse} itemsPurse={itemsPurse as Purse} />
         ) : (
           <button onClick={tryConnectWallet}>Connect Wallet</button>
         )}
